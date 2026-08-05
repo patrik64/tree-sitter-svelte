@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>svelte × tree-sitter — slides</title>
+<style>
+	:root {
+		--bg: #0f1116;
+		--bg-raised: #161923;
+		--bg-inset: #0b0d12;
+		--border: #262c3a;
+		--border-soft: #1e2330;
+		--text: #e8e9ee;
+		--muted: #8f95a8;
+		--accent: #ff3e00;
+		--accent-soft: rgba(255, 62, 0, 0.14);
+		--green: #98c379;
+		--blue: #61afef;
+		--purple: #c678dd;
+		--yellow: #e5c07b;
+		--cyan: #56b6c2;
+		--orange: #d19a66;
+		--red: #e06c75;
+		--mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+		--sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	}
+
+	* { box-sizing: border-box; margin: 0; }
+
+	html, body { height: 100%; }
+
+	body {
+		background: var(--bg);
+		color: var(--text);
+		font: 18px/1.6 var(--sans);
+		overflow: hidden;
+	}
+
+	.slide {
+		position: absolute;
+		inset: 0;
+		display: none;
+		padding: 4vh 6vw;
+		overflow: auto;
+	}
+
+	.slide.active { display: flex; flex-direction: column; justify-content: center; }
+
+	.inner { max-width: 1080px; margin: 0 auto; width: 100%; }
+
+	.kicker {
+		font: 600 0.8rem var(--mono);
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--accent);
+		margin-bottom: 0.9rem;
+	}
+
+	h1 {
+		font-size: clamp(2.4rem, 6vw, 4.2rem);
+		line-height: 1.1;
+		letter-spacing: -0.02em;
+		margin-bottom: 1.2rem;
+	}
+
+	h2 {
+		font-size: clamp(1.8rem, 4vw, 2.6rem);
+		line-height: 1.15;
+		letter-spacing: -0.015em;
+		margin-bottom: 1.4rem;
+	}
+
+	.orange { color: var(--accent); }
+	.dim { color: var(--muted); }
+
+	p.lede { font-size: 1.25rem; color: var(--muted); max-width: 60ch; }
+
+	ul.big { list-style: none; padding: 0; font-size: 1.3rem; }
+	ul.big li { margin: 0.9rem 0; padding-left: 1.6rem; position: relative; }
+	ul.big li::before { content: '▸'; position: absolute; left: 0; color: var(--accent); }
+	ul.big strong { color: var(--text); }
+	ul.big .note { color: var(--muted); font-size: 1.05rem; display: block; }
+
+	code {
+		font-family: var(--mono);
+		font-size: 0.92em;
+		background: #ffffff12;
+		padding: 0.1em 0.35em;
+		border-radius: 4px;
+	}
+
+	pre {
+		background: var(--bg-inset);
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		padding: 1.1rem 1.3rem;
+		font: 1.05rem/1.65 var(--mono);
+		overflow: auto;
+		tab-size: 2;
+	}
+
+	pre code { background: none; padding: 0; font-size: 1em; }
+
+	.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 2.2rem; align-items: start; }
+	.cols.wide-left { grid-template-columns: 3fr 2fr; }
+
+	/* pipeline */
+	.pipeline { list-style: none; padding: 0; counter-reset: step; font-size: 1.2rem; }
+	.pipeline li {
+		counter-increment: step;
+		position: relative;
+		padding: 0.55rem 0 0.55rem 3rem;
+	}
+	.pipeline li::before {
+		content: counter(step);
+		position: absolute; left: 0; top: 0.7rem;
+		width: 2rem; height: 2rem; border-radius: 50%;
+		background: var(--accent-soft); color: var(--accent);
+		font: 700 1rem/2rem var(--mono); text-align: center;
+	}
+	.pipeline .what { color: var(--muted); font-size: 1rem; display: block; }
+
+	/* demo slides */
+	.demo-tag {
+		display: inline-block;
+		font: 600 0.95rem var(--mono);
+		background: var(--accent);
+		color: #fff;
+		padding: 0.25rem 0.8rem;
+		border-radius: 99px;
+		margin-bottom: 1.2rem;
+	}
+
+	.figures { display: flex; gap: 1.2rem; margin: 1.4rem 0; flex-wrap: wrap; }
+	.figure {
+		border: 1px solid var(--border);
+		background: var(--bg-inset);
+		border-radius: 14px;
+		padding: 1rem 1.5rem;
+		min-width: 200px;
+	}
+	.figure .label { font: 600 0.72rem var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+	.figure .value { font: 700 2.6rem/1.2 var(--mono); }
+	.figure.hot { border-color: rgba(255, 62, 0, 0.55); }
+	.figure.hot .value { color: var(--accent); }
+
+	/* syntax colors for hand-highlighted snippets */
+	.tk { color: var(--purple); }   /* keyword */
+	.ts { color: var(--green); }    /* string */
+	.tf { color: var(--blue); }     /* function */
+	.tr { color: var(--accent); font-weight: 600; } /* rune */
+	.tt { color: var(--red); }      /* tag */
+	.ta { color: var(--orange); }   /* attribute */
+	.tc { color: #5f6673; font-style: italic; } /* comment */
+	.tp { color: #6b7284; }         /* punctuation */
+	.ty { color: var(--yellow); }   /* type / component */
+	.tv { color: var(--cyan); }     /* capture / special */
+
+	.badge-err {
+		font: 600 0.78rem var(--mono);
+		color: #f47067; background: rgba(244, 112, 103, 0.14);
+		padding: 0.15rem 0.6rem; border-radius: 99px;
+	}
+
+	table { border-collapse: collapse; font-size: 1.05rem; width: 100%; }
+	td, th { padding: 0.5rem 0.9rem; border-bottom: 1px solid var(--border-soft); text-align: left; }
+	th { color: var(--muted); font: 600 0.78rem var(--mono); text-transform: uppercase; letter-spacing: 0.07em; }
+	td:first-child { font-family: var(--mono); color: var(--blue); white-space: nowrap; }
+
+	/* chrome */
+	.hud {
+		position: fixed; bottom: 1rem; right: 1.2rem;
+		display: flex; align-items: center; gap: 0.8rem;
+		font: 0.8rem var(--mono); color: var(--muted);
+		z-index: 10;
+	}
+	.hud button {
+		background: var(--bg-raised); border: 1px solid var(--border);
+		color: var(--text); border-radius: 8px; padding: 0.25rem 0.7rem;
+		font: 1rem var(--mono); cursor: pointer;
+	}
+	.hud button:hover { border-color: var(--muted); }
+
+	.progress {
+		position: fixed; bottom: 0; left: 0; height: 3px;
+		background: var(--accent); z-index: 10;
+		transition: width 0.2s ease;
+	}
+
+	.brand-footer {
+		position: fixed; bottom: 1rem; left: 1.2rem;
+		font: 0.8rem var(--mono); color: var(--muted); z-index: 10;
+	}
+	.brand-footer .orange { font-weight: 700; }
+
+	@media print {
+		body { overflow: visible; }
+		.slide { position: static; display: block !important; page-break-after: always; padding: 2rem; }
+		.hud, .progress, .brand-footer { display: none; }
+	}
+</style>
+</head>
+<body>
+
+<!-- 1 · title -->
+<section class="slide">
+	<div class="inner">
+		<div class="kicker">svelte meetup</div>
+		<h1><span class="orange">Parsing Svelte,</span><br />in Svelte.</h1>
+		<p class="lede">
+			A tour of tree-sitter — the parser inside your editor — running as WebAssembly
+			in a SvelteKit app, re-parsing Svelte components on every keystroke.
+		</p>
+		<p style="margin-top:2rem" class="dim"><code>svelte</code> <span class="tp">×</span> <code>tree-sitter</code></p>
+	</div>
+</section>
+
+<!-- 2 · what is tree-sitter -->
+<section class="slide">
+	<div class="inner">
+		<div class="kicker">the guest of honor</div>
+		<h2>What is tree-sitter?</h2>
+		<ul class="big">
+			<li><strong>A parser generator + runtime</strong> (C, CLI in Rust) that turns source code into a concrete syntax tree.
+				<span class="note">grammars exist for ~anything — including Svelte</span></li>
+			<li><strong>Incremental</strong> — after an edit it re-parses only what changed.
+				<span class="note">fast enough to run on every keystroke</span></li>
+			<li><strong>Error-tolerant</strong> — broken code still yields a useful tree.
+				<span class="note">essential: code is broken ~most of the time while you type</span></li>
+			<li><strong>Queryable</strong> — S-expression patterns extract structure.
+				<span class="note">highlighting, folding, outlines, structural search</span></li>
+		</ul>
+		<p style="margin-top:1.4rem" class="dim">Used by Zed, Neovim, Helix, GitHub code navigation…</p>
+	</div>
+</section>
+
+<!-- 3 · the hook -->
+<section class="slide">
+	<div class="inner">
+		<div class="kicker">tonight's demo app</div>
+		<h2>The demo is the talk</h2>
+		<div class="cols">
+			<div>
+				<ul class="big">
+					<li>A <strong>SvelteKit</strong> app (Svelte 5, runes)</li>
+					<li>tree-sitter compiled to <strong>WASM</strong>, in the browser</li>
+					<li>parsing <strong>Svelte components</strong> with the community Svelte grammar
+						<span class="note">the same grammar Zed / Neovim / Helix use for .svelte files</span></li>
+					<li>plus <strong>JavaScript + CSS</strong> grammars for what's inside</li>
+					<li>100% client-side — ~1 MB of WASM, then zero network</li>
+				</ul>
+			</div>
+			<pre><code><span class="tc">// every demo page, conceptually:</span>
+<span class="tk">let</span> code = <span class="tr">$state</span>(sample);
+<span class="tk">const</span> tree = <span class="tr">$derived</span>(
+	parser.<span class="tf">parse</span>(code)
+);
+<span class="tc">// parsing is just another
+// reactive computation</span></code></pre>
+		</div>
+	</div>
+</section>
+
+<!-- 4 · pipeline -->
+<section class="slide">
+	<div class="inner">
+		<div class="kicker">how a grammar reaches the browser</div>
+		<h2>grammar.js → .wasm</h2>
+		<div class="cols">
+			<ol class="pipeline">
+				<li><code>grammar.js</code><span class="what">the Svelte grammar, described in JavaScript</span></li>
+				<li><code>tree-sitter generate</code><span class="what">Rust CLI emits a generated C parser</span></li>
+				<li><code>parser.c → .wasm</code><span class="what">emscripten compiles it to a ~45 KB side module</span></li>
+				<li><code>web-tree-sitter</code><span class="what">loads it at runtime, next to your Svelte code</span></li>
+			</ol>
+			<div>
+				<pre><code><span class="tc">// src/lib/treesitter/load.ts</span>
+<span class="tk">await</span> Parser.<span class="tf">init</span>();
+<span class="tk">const</span> svelte = <span class="tk">await</span> Language.<span class="tf">load</span>(
+	<span class="ts">'/wasm/tree-sitter-svelte.wasm'</span>
+);
+parser.<span class="tf">setLanguage</span>(svelte);</code></pre>
+				<p class="dim" style="margin-top:1rem; font-size:1rem">
+					No build step needed here: the <code>.wasm</code> binaries ship prebuilt
+					in the grammars' npm packages.
+				</p>
+			</div>
+		</div>
+	</div>
+</section>
+
+<!-- 5 · demo: tree -->
+<section class="slide">
+	<div class="inner">
+		<span class="demo-tag">live demo · /tree</span>
+		<h2>Every keystroke, a tree</h2>
+		<div class="cols">
+			<ul class="big">
+				<li>Type → parse → render the tree, reactively</li>
+				<li>Click in the code — the tree follows the cursor</li>
+				<li>Hover a node — its source range lights up</li>
+				<li>Parse time on screen: <strong>&lt; 1 ms</strong> warm</li>
+			</ul>
+			<div>
+				<pre><code>(element <span class="dim">11:0–11:36</span>
+	(start_tag
+		(tag_name)          <span class="tc">; h1</span>
+		(attribute
+			(attribute_name)  <span class="tc">; class</span>
+			(quoted_attribute_value)))
+	(text)                <span class="tc">; Hello</span>
+	(expression
+		(svelte_raw_text))  <span class="tc">; {name}</span>
+	(end_tag (tag_name)))</code></pre>
+				<p style="margin-top:0.9rem"><span class="badge-err">syntax error — recovered</span>
+					<span class="dim" style="font-size:1rem"> ← delete a closing tag: red ERROR nodes, rest of the tree survives</span></p>
+			</div>
+		</div>
+	</div>
+</section>
+
+<!-- 6 · demo: highlight -->
+<section class="slide">
+	<div class="inner">
+		<span class="demo-tag">live demo · /highlight</span>
+		<h2>Highlighting is a query</h2>
+		<div class="cols">
+			<div>
+				<pre><code><span class="tc">; highlights.scm — no regex, just patterns</span>
+(tag_name) <span class="tv">@tag</span>
+(attribute_name) <span class="tv">@attribute</span>
+(comment) <span class="tv">@comment</span>
+
+<span class="tc">; components are Capitalized</span>
+((tag_name) <span class="tv">@tag.component</span>
+	(<span class="tk">#match?</span> <span class="tv">@tag.component</span> <span class="ts">"^[A-Z]"</span>))</code></pre>
+			</div>
+			<ul class="big">
+				<li>Each <code>@capture</code> maps to a CSS class — that's the whole highlighter</li>
+				<li><strong>Language injections:</strong> <code>&lt;script&gt;</code>, <code>&lt;style&gt;</code> and every <code>{expression}</code> get re-parsed by the JS / CSS grammars
+					<span class="note">exactly how editors highlight .svelte files — toggle it live</span></li>
+				<li>Runes are plain identifiers to JS — one <code>#match?</code> paints <span class="tr">$state</span> Svelte-orange</li>
+			</ul>
+		</div>
+	</div>
+</section>
+
+<!-- 7 · demo: query -->
+<section class="slide">
+	<div class="inner">
+		<span class="demo-tag">live demo · /query</span>
+		<h2>CSS selectors, but for syntax</h2>
+		<div class="cols">
+			<div>
+				<pre><code><span class="tc">; find every event handler</span>
+((attribute_name) <span class="tv">@event</span>
+	(<span class="tk">#match?</span> <span class="tv">@event</span> <span class="ts">"^on"</span>))
+
+<span class="tc">; text inside headings only</span>
+((element
+	(start_tag (tag_name) <span class="tv">@_t</span>)
+	(text) <span class="tv">@heading</span>)
+	(<span class="tk">#match?</span> <span class="tv">@_t</span> <span class="ts">"^h[1-6]$"</span>))</code></pre>
+			</div>
+			<ul class="big">
+				<li>Patterns match <strong>tree shapes</strong>, not text</li>
+				<li><code>@captures</code> pull nodes out, <code>#predicates</code> refine</li>
+				<li>Everything downstream is “just a query”:
+					<span class="note">highlighting · folding · outlines · structural search · lint rules</span></li>
+				<li>Playground: edit the query, watch captures light up in the source</li>
+			</ul>
+		</div>
+	</div>
+</section>
+
+<!-- 8 · demo: outline -->
+<section class="slide">
+	<div class="inner">
+		<span class="demo-tag">live demo · /outline</span>
+		<h2>Component anatomy, extracted</h2>
+		<div class="cols">
+			<ul class="big">
+				<li>Query 1 (Svelte tree): script region, snippets, components used</li>
+				<li>Query 2 (injected JS tree): <span class="tr">$props</span>, <span class="tr">$state</span>, <span class="tr">$derived</span>, <span class="tr">$effect</span>, functions</li>
+				<li>Together: a live API card for any component you paste</li>
+				<li>Docs-from-code, codemods, lint rules — one query away</li>
+			</ul>
+			<pre><code><span class="ty">PROPS</span>    title · items <span class="tp">= []</span> · onselect
+         · variant <span class="tp">= 'list'</span>
+<span class="ty">STATE</span>    selected <span class="tp">= null</span> · query <span class="tp">= ''</span>
+<span class="ty">DERIVED</span>  filtered · stats
+<span class="ty">EFFECTS</span>  $effect <span class="tp">×1</span>
+<span class="ty">SNIPPETS</span> row <span class="tp">(item)</span>
+<span class="ty">USES</span>     SearchBox · EmptyState</code></pre>
+		</div>
+	</div>
+</section>
+
+<!-- 9 · demo: incremental -->
+<section class="slide">
+	<div class="inner">
+		<span class="demo-tag">live demo · /incremental</span>
+		<h2>Parse only what changed</h2>
+		<div class="figures">
+			<div class="figure hot">
+				<div class="label">incremental re-parse</div>
+				<div class="value">0.3<small style="font-size:1.1rem"> ms</small></div>
+				<div class="dim" style="font-size:0.9rem">tree.edit() + old tree</div>
+			</div>
+			<div class="figure">
+				<div class="label">full re-parse</div>
+				<div class="value">~700<small style="font-size:1.1rem"> ms</small></div>
+				<div class="dim" style="font-size:0.9rem">same 2,000-line file</div>
+			</div>
+			<div class="figure">
+				<div class="label">speedup</div>
+				<div class="value">×2400</div>
+				<div class="dim" style="font-size:0.9rem">on a one-char edit</div>
+			</div>
+		</div>
+		<ul class="big">
+			<li><code>tree.edit()</code> declares where the text changed; the next parse <strong>reuses every subtree it can prove unaffected</strong></li>
+			<li>Cost tracks the size of the <em>edit</em>, not the <em>file</em> — how editors stay responsive on huge files</li>
+		</ul>
+	</div>
+</section>
+
+<!-- 10 · why the pairing works -->
+<section class="slide">
+	<div class="inner">
+		<div class="kicker">why svelte ♥ tree-sitter</div>
+		<h2>Same philosophy, different layer</h2>
+		<div class="cols">
+			<ul class="big">
+				<li><strong>Svelte:</strong> don't re-render the world — update exactly the DOM that changed</li>
+				<li><strong>tree-sitter:</strong> don't re-parse the world — rebuild exactly the subtrees that changed</li>
+				<li>Fine-grained invalidation, both sides of the keyboard</li>
+			</ul>
+			<pre><code><span class="tc">// the entire integration</span>
+<span class="tk">let</span> code = <span class="tr">$state</span>(sample);
+
+<span class="tk">const</span> tree      = <span class="tr">$derived</span>(<span class="tf">parse</span>(code));
+<span class="tk">const</span> highlights = <span class="tr">$derived</span>(<span class="tf">query</span>(tree));
+<span class="tk">const</span> outline   = <span class="tr">$derived</span>(<span class="tf">extract</span>(tree));
+
+<span class="tc">// no effects, no caches, no plumbing</span></code></pre>
+		</div>
+	</div>
+</section>
+
+<!-- 11 · field notes -->
+<section class="slide">
+	<div class="inner">
+		<div class="kicker">field notes from building it</div>
+		<h2>Things I learned the hard way</h2>
+		<ul class="big">
+			<li><strong>Prebuilt WASM ships on npm.</strong> <code>@tree-sitter-grammars/tree-sitter-svelte</code>, <code>tree-sitter-javascript</code>, <code>tree-sitter-css</code> — no emscripten needed.
+				<span class="note">the aggregate “tree-sitter-wasms” package was built with an incompatible emscripten — binaries wouldn't load in web-tree-sitter 0.26</span></li>
+			<li><strong>Pick the maintained grammar.</strong> The old <code>tree-sitter-svelte</code> predates Svelte 5; the grammars-org one parses snippets, <code>{@render}</code>, else-if…</li>
+			<li><strong>Measure before you demo.</strong> The Svelte grammar scales super-linearly with sibling count — a 4,000-line file took 2.8 s to parse cold.
+				<span class="note">…which makes the 0.3 ms incremental re-parse look even better on stage</span></li>
+			<li><strong>Validate queries in Node.</strong> Same WASM runs server-side — one script compile-checks every query in CI.</li>
+		</ul>
+	</div>
+</section>
+
+<!-- 12 · app map -->
+<section class="slide">
+	<div class="inner">
+		<div class="kicker">take it home</div>
+		<h2>The playground, at a glance</h2>
+		<table>
+			<tr><th>route</th><th>demo</th></tr>
+			<tr><td>/tree</td><td>live parse-tree explorer, cursor ↔ node, error recovery</td></tr>
+			<tr><td>/highlight</td><td>query-driven highlighting + JS/CSS language injections</td></tr>
+			<tr><td>/query</td><td>S-expression query playground with live captures</td></tr>
+			<tr><td>/outline</td><td>props / state / derived / snippets extracted from any component</td></tr>
+			<tr><td>/incremental</td><td>tree.edit() vs full re-parse on a 2,000-line file</td></tr>
+		</table>
+		<p class="dim" style="margin-top:1.2rem; font-size:1rem">
+			<code>npm install &amp;&amp; npm run dev</code> — fully static build, works offline.
+			Bonus: <code>node scripts/explore.mjs AnyComponent.svelte</code> prints its tree in the terminal.
+		</p>
+	</div>
+</section>
+
+<!-- 13 · closing -->
+<section class="slide">
+	<div class="inner">
+		<div class="kicker">fin</div>
+		<h1><span class="orange">Your editor parses</span><br />like Svelte renders.</h1>
+		<p class="lede" style="margin-top:0.5rem">
+			Incremental, error-tolerant, queryable trees — now also a thing you can play with in the browser.
+		</p>
+		<ul class="big" style="margin-top:1.6rem">
+			<li>tree-sitter docs — <code>tree-sitter.github.io/tree-sitter</code></li>
+			<li>the Svelte grammar — <code>github.com/tree-sitter-grammars/tree-sitter-svelte</code></li>
+			<li>this playground — <code>tree-sitter-svelte</code> <span class="dim">(repo link here)</span></li>
+		</ul>
+		<p style="margin-top:2.2rem; font-size:1.4rem">Questions? <span class="orange">→</span></p>
+	</div>
+</section>
+
+<div class="brand-footer"><span class="orange">svelte</span> <span>×</span> <span style="color:var(--green)">tree-sitter</span></div>
+<div class="hud">
+	<button id="prev" aria-label="previous slide">←</button>
+	<span id="counter">1 / 1</span>
+	<button id="next" aria-label="next slide">→</button>
+</div>
+<div class="progress" id="progress"></div>
+
+<script>
+	const slides = Array.from(document.querySelectorAll('.slide'));
+	const counter = document.getElementById('counter');
+	const progress = document.getElementById('progress');
+	let current = 0;
+
+	function show(n) {
+		current = Math.max(0, Math.min(slides.length - 1, n));
+		slides.forEach((s, i) => s.classList.toggle('active', i === current));
+		counter.textContent = (current + 1) + ' / ' + slides.length;
+		progress.style.width = ((current + 1) / slides.length) * 100 + '%';
+		history.replaceState(null, '', '#/' + (current + 1));
+	}
+
+	function next() { show(current + 1); }
+	function prev() { show(current - 1); }
+
+	document.getElementById('next').addEventListener('click', next);
+	document.getElementById('prev').addEventListener('click', prev);
+
+	document.addEventListener('keydown', (e) => {
+		if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); next(); }
+		else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); prev(); }
+		else if (e.key === 'Home') { e.preventDefault(); show(0); }
+		else if (e.key === 'End') { e.preventDefault(); show(slides.length - 1); }
+	});
+
+	const fromHash = parseInt((location.hash.match(/^#\/(\d+)$/) || [])[1], 10);
+	show(Number.isFinite(fromHash) ? fromHash - 1 : 0);
+</script>
+</body>
+</html>
