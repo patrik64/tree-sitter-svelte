@@ -10,7 +10,7 @@ community [`@tree-sitter-grammars/tree-sitter-svelte`](https://github.com/tree-s
 grammar — the same grammar your editor uses for `.svelte` files. Everything runs client-side;
 after the initial load there is no network at all.
 
-## Run it
+## Run
 
 ```sh
 pnpm i
