@@ -23,7 +23,7 @@
 		{
 			href: '/incremental',
 			title: 'Parse only what changed',
-			text: 'Edit a 4,000-line file and compare an incremental re-parse against a full one.'
+			text: 'Edit a 2,000-line file and compare an incremental re-parse against a full one.'
 		}
 	];
 </script>
