@@ -3,6 +3,7 @@
 	import type { Tree } from 'web-tree-sitter';
 	import CodeEditor from '$lib/components/CodeEditor.svelte';
 	import type { TreeSitter } from '$lib/treesitter/core';
+	import { renderHighlighted, svelteSpans, type Span } from '$lib/treesitter/highlight';
 	import { computeEdit, changedRanges, type ChangedRange } from '$lib/treesitter/inspect';
 	import { makeBigSample } from '$lib/samples';
 
@@ -12,6 +13,9 @@
 	let stats = $state<{ incMs: number; ranges: ChangedRange[]; edits: number } | null>(null);
 	let fullMs = $state<number | null>(null);
 	let coldMs = $state(0);
+	let spans = $state.raw<Span[]>([]);
+	let firstRow = $state(0);
+	let lastRow = $state(60);
 	let editor: ReturnType<typeof CodeEditor> | undefined = $state();
 
 	// Non-reactive bookkeeping: the previous document and its tree, kept so the
@@ -21,7 +25,8 @@
 	let editCount = 0;
 	let fullTimer: ReturnType<typeof setTimeout> | undefined;
 
-	$effect(() => {
+	// A pre-effect, so the spans are ready before the editor re-renders.
+	$effect.pre(() => {
 		const text = code;
 		if (!prevTree) {
 			const t0 = performance.now();
@@ -31,6 +36,14 @@
 		} else if (text !== prevText) {
 			update(text);
 		}
+
+		// Highlight from the tree we already have — no extra parse — and only
+		// the rows on screen plus a screen of margin each way. Re-runs on scroll.
+		const margin = lastRow - firstRow;
+		spans = svelteSpans(ts, text, prevTree, true, {
+			startPosition: { row: Math.max(0, firstRow - margin), column: 0 },
+			endPosition: { row: lastRow + margin, column: 0 }
+		});
 	});
 
 	function update(text: string) {
@@ -73,9 +86,7 @@
 	const kb = $derived(Math.round(code.length / 1024));
 	const speedup = $derived(stats && fullMs !== null && stats.incMs > 0 ? fullMs / stats.incMs : null);
 
-	const escaped = $derived(
-		code.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-	);
+	const html = $derived(renderHighlighted(code, spans));
 </script>
 
 <div class="demo split">
@@ -85,7 +96,15 @@
 			<span class="spacer"></span>
 			<span>{lines} lines · {kb} KB · cold parse {coldMs.toFixed(1)} ms</span>
 		</div>
-		<CodeEditor bind:this={editor} bind:value={code} html={escaped} />
+		<CodeEditor
+			bind:this={editor}
+			bind:value={code}
+			{html}
+			onViewport={(first, last) => {
+				firstRow = first;
+				lastRow = last;
+			}}
+		/>
 	</section>
 
 	<section class="panel">
@@ -150,8 +169,9 @@
 				</p>
 				<p>
 					(The incremental parse runs on every keystroke; the from-scratch benchmark would
-					freeze typing, so it waits until you pause. Highlighting is off in this editor on
-					purpose — we're timing the parser, nothing else.)
+					freeze typing, so it waits until you pause. Highlighting reuses the incremental tree
+					and only queries the lines on screen, like editors do — and it's kept out of the
+					timings, so we're measuring the parser and nothing else.)
 				</p>
 			</div>
 		</div>

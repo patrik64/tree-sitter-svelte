@@ -6,13 +6,17 @@
 		value: string;
 		html: string;
 		onCursor?: (index: number) => void;
+		/** Called with the visible row range whenever it may have changed. */
+		onViewport?: (firstRow: number, lastRow: number) => void;
 		label?: string;
 	}
 
-	let { value = $bindable(), html, onCursor, label = 'code editor' }: Props = $props();
+	let { value = $bindable(), html, onCursor, onViewport, label = 'code editor' }: Props = $props();
 
 	let textarea: HTMLTextAreaElement | undefined = $state();
 	let backdrop: HTMLElement | undefined = $state();
+
+	$effect(() => reportViewport());
 
 	/** Select a character range and scroll it into view (used by tree/outline). */
 	export function select(start: number, end: number) {
@@ -30,6 +34,16 @@
 		if (!backdrop || !textarea) return;
 		backdrop.scrollTop = textarea.scrollTop;
 		backdrop.scrollLeft = textarea.scrollLeft;
+		reportViewport();
+	}
+
+	function reportViewport() {
+		if (!onViewport || !textarea) return;
+		const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 20;
+		onViewport(
+			Math.floor(textarea.scrollTop / lineHeight),
+			Math.ceil((textarea.scrollTop + textarea.clientHeight) / lineHeight)
+		);
 	}
 
 	function report() {
@@ -46,6 +60,8 @@
 		}
 	}
 </script>
+
+<svelte:window onresize={reportViewport} />
 
 <div class="editor">
 	<pre class="backdrop" bind:this={backdrop} aria-hidden="true"><code>{@html html}{'\n'}</code></pre>

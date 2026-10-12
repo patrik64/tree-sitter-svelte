@@ -1,7 +1,7 @@
 // Turns query captures into styled HTML. Two independent layers:
 //   - spans: syntax colors from highlight queries  → class "tok-…"
 //   - marks: transient overlays (hover, captures)  → class "mk-…"
-import type { Query, Tree } from 'web-tree-sitter';
+import type { Query, QueryOptions, Tree } from 'web-tree-sitter';
 import type { TreeSitter } from './core';
 
 export interface Span {
@@ -15,10 +15,13 @@ const escapeHtml = (s: string) =>
 
 const cssName = (capture: string) => capture.replace(/[^a-zA-Z0-9]+/g, '-');
 
-/** Run a highlight query over a tree; `offset` shifts indexes for injections. */
-export function captureSpans(query: Query, tree: Tree, offset = 0): Span[] {
+/**
+ * Run a highlight query over a tree; `offset` shifts indexes for injections,
+ * `range` restricts it to the nodes touching part of the document.
+ */
+export function captureSpans(query: Query, tree: Tree, offset = 0, range?: QueryOptions): Span[] {
 	return query
-		.captures(tree.rootNode)
+		.captures(tree.rootNode, range)
 		.filter((c) => !c.name.startsWith('_') && c.node.endIndex > c.node.startIndex)
 		.map((c) => ({
 			start: c.node.startIndex + offset,
@@ -32,12 +35,21 @@ export function captureSpans(query: Query, tree: Tree, offset = 0): Span[] {
  * regions (script, style, {expressions}) are re-parsed with the JavaScript and
  * CSS grammars and their captures overlaid — the same mechanism editors like
  * Zed and Neovim use for .svelte files.
+ *
+ * Pass a `range` (e.g. the visible rows) to only highlight that part of a big
+ * document; injected regions touching it are still re-parsed whole.
  */
-export function svelteSpans(ts: TreeSitter, code: string, tree: Tree, injections = true): Span[] {
-	const spans = captureSpans(ts.highlights.svelte, tree);
+export function svelteSpans(
+	ts: TreeSitter,
+	code: string,
+	tree: Tree,
+	injections = true,
+	range?: QueryOptions
+): Span[] {
+	const spans = captureSpans(ts.highlights.svelte, tree, 0, range);
 	if (!injections) return spans;
 
-	for (const capture of ts.injections.captures(tree.rootNode)) {
+	for (const capture of ts.injections.captures(tree.rootNode, range)) {
 		const lang = capture.name === 'injection.css' ? 'css' : 'javascript';
 		const { startIndex, endIndex } = capture.node;
 		if (endIndex <= startIndex) continue;
